@@ -532,7 +532,9 @@ ngx_rtmp_dash_close_fragment(ngx_rtmp_session_t *s, ngx_rtmp_dash_track_t *t)
     ngx_fd_t                   fd;
     ngx_buf_t                  b;
     ngx_rtmp_dash_ctx_t       *ctx;
+    ngx_rtmp_codec_ctx_t      *codec_ctx;
     ngx_rtmp_dash_frag_t      *f;
+    uint32_t                   duration_fix = 0;
     int                        number;
 
     static u_char              buffer[NGX_RTMP_DASH_BUFSIZE];
@@ -546,6 +548,11 @@ ngx_rtmp_dash_close_fragment(ngx_rtmp_session_t *s, ngx_rtmp_dash_track_t *t)
                    t->id, t->type, t->earliest_pres_time);
 
     ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_dash_module);
+    codec_ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_codec_module);
+
+    if (ctx->has_video){
+        duration_fix  = 1000 / codec_ctx->frame_rate;
+    }
 
     b.start = buffer;
     b.end = buffer + sizeof(buffer);
@@ -562,7 +569,7 @@ ngx_rtmp_dash_close_fragment(ngx_rtmp_session_t *s, ngx_rtmp_dash_track_t *t)
     b.last = pos;
 
     ngx_rtmp_mp4_write_sidx(&b, t->mdat_size + 8 + (pos1 - (pos + 44)),
-                            t->earliest_pres_time, t->latest_pres_time);
+                            t->earliest_pres_time, t->latest_pres_time + duration_fix);
     b.last = pos1;
     ngx_rtmp_mp4_write_mdat(&b, t->mdat_size + 8);
 
@@ -1044,14 +1051,17 @@ static ngx_int_t
 ngx_rtmp_dash_append(ngx_rtmp_session_t *s, ngx_chain_t *in,
     ngx_rtmp_dash_track_t *t, ngx_int_t key, uint32_t timestamp, uint32_t delay)
 {
-    u_char                 *p;
-    size_t                  size, bsize;
-    ngx_rtmp_mp4_sample_t  *smpl;
+    u_char                     *p;
+    size_t                     size, bsize;
+    ngx_rtmp_mp4_sample_t     *smpl;
+    ngx_rtmp_codec_ctx_t      *codec_ctx;
 
     static u_char           buffer[NGX_RTMP_DASH_BUFSIZE];
 
     p = buffer;
     size = 0;
+
+    codec_ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_codec_module);
 
     for (; in && size < sizeof(buffer); in = in->next) {
 
@@ -1084,9 +1094,14 @@ ngx_rtmp_dash_append(ngx_rtmp_session_t *s, ngx_chain_t *in,
 
         smpl->delay = delay;
         smpl->size = (uint32_t) size;
-        smpl->duration = 0;
         smpl->timestamp = timestamp;
         smpl->key = (key ? 1 : 0);
+
+        if (t->type == 'v'){
+            smpl->duration = 1000 / codec_ctx->frame_rate;
+        } else {
+            smpl->duration = (1024*1000) / codec_ctx->sample_rate;
+        }
 
         if (t->sample_count > 0) {
             smpl = &t->samples[t->sample_count - 1];
