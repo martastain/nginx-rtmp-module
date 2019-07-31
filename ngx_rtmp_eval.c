@@ -157,15 +157,16 @@ ngx_rtmp_eval(void *ctx, ngx_str_t *in, ngx_rtmp_eval_t **e, ngx_str_t *out,
                 /* fall through */
 
             case NORMAL:
-                switch (c) {
-                    case '$':
-                        name.data = p + 1;
-                        state = NAME;
-                        continue;
-                    case '\\':
-                        state = ESCAPE;
-                        continue;
+                if (c == '$'){
+                    name.data = p + 1;
+                    state = NAME;
+                    continue;
                 }
+                if (c == '\\'){
+                    state = ESCAPE;
+                    continue;
+                }
+                /* fall through */
 
             case ESCAPE:
                 ngx_rtmp_eval_append(&b, &c, 1, log);
